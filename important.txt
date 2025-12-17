@@ -1,0 +1,17 @@
+az extension add --name containerapp
+
+
+# Supprimer
+az group delete --name rg-MLopsyy --yes --no-wait
+# Vérifier l'état de la suppression
+az group show --name rg-MLopsyy
+
+# Ou lister tous vos groupes de ressources
+az group list --output table
+
+
+# CORRECTION OBLIGATOIRE
+sed -i 's/\r$//' votre_script.sh
+
+# OU avec dos2unix si installé
+dos2unix votre_script.sh
