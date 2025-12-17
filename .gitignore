@@ -1,43 +1,10 @@
-# Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
 venv/
-.venv/
-env/
-*.egg-info/
-
-# Secrets et données sensibles
 .env
-.env.*
-*.secret
-*.key
-*.pem
-resultat.txt
-azure-credentials.json
-credentials*.json
-
-# MLflow
 mlruns/
-
-# Logs
 *.log
-logs/
-
-# OS
 .DS_Store
-Thumbs.db
-
-# IDE
 .vscode/
-.idea/
-*.swp
-*.swo
-
-# Images générées
 confusion_matrix.png
 feature_importance.png
-
-# Docker (sauf .dockerignore)
-!/.dockerignore
