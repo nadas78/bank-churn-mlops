@@ -5,12 +5,21 @@ import numpy as np
 from typing import List
 import logging
 import os
-
+from opencensus.ext.azure.log_exporter import AzureLogHandler  # AJOUT
 from app.models import CustomerFeatures, PredictionResponse, HealthResponse
 
-# Configuration du logging
+# Configuration du logging - AJOUT Application Insights
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# AJOUT: Configuration Application Insights
+APPINSIGHTS_CONN = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+if APPINSIGHTS_CONN:
+    handler = AzureLogHandler(connection_string=APPINSIGHTS_CONN)
+    logger.addHandler(handler)
+    logger.info("Application Insights connecté")
+else:
+    logger.warning("Application Insights non configuré")
 
 # Initialisation FastAPI
 app = FastAPI(
