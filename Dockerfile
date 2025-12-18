@@ -14,6 +14,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY model/ ./model/
 
+# 🔥 COPIER LES DONNÉES POUR LE DRIFT
+COPY data/ ./data/
+COPY drift_reports/ ./drift_reports/
+
 # Exposer le port
 EXPOSE 8000
 
