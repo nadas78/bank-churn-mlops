@@ -223,15 +223,19 @@ def log_drift_to_insights(drift_results: dict):
 
     risk = "LOW" if percentage < 20 else "MEDIUM" if percentage < 50 else "HIGH"
 
-    logger.warning("drift_detection", extra={
-        "customDimensions": {
-            "event_type": "drift_detection",
-            "total_features": total,
-            "drifted_features": drifted,
-            "drift_percentage": percentage,
-            "risk_level": risk
+    logger.warning(
+        "drift_detection",
+        extra={
+            "custom_dimensions": {
+                "event_type": "drift_detection",
+                "drift_percentage": percentage,
+                "risk_level": risk,
+                "total_features": total,
+                "drifted_features": drifted
+            }
         }
-    })
+    )
+
 
     for feature, details in drift_results.items():
         if details.get("drift_detected"):
