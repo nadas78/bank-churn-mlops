@@ -5,8 +5,12 @@ import numpy as np
 from typing import List
 import logging
 import os
-from opencensus.ext.azure.log_exporter import AzureLogHandler  # AJOUT
+from opencensus.ext.azure.log_exporter import AzureLogHandler
 from app.models import CustomerFeatures, PredictionResponse, HealthResponse
+import json  
+from scipy.stats import ks_2samp  
+import glob  
+from pathlib import Path
 
 # Configuration du logging - AJOUT Application Insights
 logging.basicConfig(level=logging.INFO)
@@ -172,6 +176,292 @@ def predict_batch(features_list: List[CustomerFeatures]):
     except Exception as e:
         logger.error(f"Erreur batch prediction : {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# FONCTIONS UTILITAIRES POUR APPLICATION INSIGHTS
+# ============================================================
+
+def log_drift_to_insights(drift_results):
+    """
+    Envoie les résultats de drift vers Application Insights
+    """
+    if not drift_results:
+        return
+    
+    # Calculer les métriques globales
+    total_features = len(drift_results)
+    drifted_features = sum(1 for r in drift_results.values() if r.get('drift_detected', False))
+    drift_percentage = (drifted_features / total_features * 100) if total_features > 0 else 0
+    
+    # Déterminer le niveau de risque
+    if drift_percentage < 20:
+        risk_level = "LOW"
+    elif drift_percentage < 50:
+        risk_level = "MEDIUM"
+    else:
+        risk_level = "HIGH"
+    
+    # Logger les métriques globales
+    logger.warning(
+        f"🚨 DRIFT DETECTION - Risk: {risk_level} - "
+        f"{drifted_features}/{total_features} features affected ({drift_percentage:.1f}%)",
+        extra={
+            'custom_dimensions': {
+                'event_type': 'drift_detection',
+                'total_features': total_features,
+                'drifted_features': drifted_features,
+                'drift_percentage': drift_percentage,
+                'risk_level': risk_level
+            }
+        }
+    )
+    
+    # Logger chaque feature avec drift
+    for feature_name, details in drift_results.items():
+        if details.get('drift_detected', False):
+            logger.warning(
+                f"⚠️  DRIFT DETECTED on feature: {feature_name}",
+                extra={
+                    'custom_dimensions': {
+                        'event_type': 'feature_drift',
+                        'feature_name': feature_name,
+                        'p_value': details.get('p_value', 0),
+                        'statistic': details.get('statistic', 0),
+                        'type': details.get('type', 'unknown')
+                    }
+                }
+            )
+
+
+# ============================================================
+# ENDPOINTS DE MONITORING DU DRIFT
+# ============================================================
+
+@app.get("/drift/status", tags=["Monitoring"])
+def get_drift_status():
+    """
+    Récupère le dernier rapport de drift et l'envoie à Application Insights
+    
+    Returns:
+        dict: Statut du drift avec détails des features affectées
+    """
+    try:
+        # Chercher le dernier rapport de drift
+        drift_reports = glob.glob("drift_reports/drift_report_*.json")
+        
+        if not drift_reports:
+            logger.info("No drift report available", extra={
+                'custom_dimensions': {'event_type': 'drift_check', 'status': 'no_report'}
+            })
+            return {
+                "status": "no_report",
+                "message": "Aucun rapport de drift disponible",
+                "instruction": "Exécutez: python drift_detection.py"
+            }
+        
+        # Prendre le plus récent
+        latest_report = max(drift_reports, key=lambda x: Path(x).stat().st_mtime)
+        
+        with open(latest_report, 'r') as f:
+            report = json.load(f)
+        
+        # Extraire les features avec drift
+        drifted_features = {
+            feature: details 
+            for feature, details in report['results'].items() 
+            if details['drift_detected']
+        }
+        
+        # Déterminer le niveau de risque
+        drift_percentage = report['drift_percentage']
+        if drift_percentage < 20:
+            risk_level = "LOW"
+            recommendation = "Surveillance normale"
+        elif drift_percentage < 50:
+            risk_level = "MEDIUM"
+            recommendation = "Attention requise - Envisager un réentraînement"
+        else:
+            risk_level = "HIGH"
+            recommendation = "Action urgente - Réentraînement recommandé"
+        
+        # 🔥 ENVOYER À APPLICATION INSIGHTS
+        log_drift_to_insights(report['results'])
+        
+        # Logger le résumé
+        logger.info(
+            f"Drift Status Check - Risk: {risk_level}",
+            extra={
+                'custom_dimensions': {
+                    'event_type': 'drift_status_check',
+                    'drift_percentage': drift_percentage,
+                    'risk_level': risk_level,
+                    'features_drifted': len(drifted_features),
+                    'features_analyzed': report['features_analyzed'],
+                    'timestamp': report['timestamp']
+                }
+            }
+        )
+        
+        response = {
+            "status": "ok",
+            "timestamp": report['timestamp'],
+            "drift_detected": len(drifted_features) > 0,
+            "features_analyzed": report['features_analyzed'],
+            "features_drifted": report['features_drifted'],
+            "drift_percentage": round(drift_percentage, 2),
+            "risk_level": risk_level,
+            "recommendation": recommendation,
+            "drifted_features": list(drifted_features.keys()),
+            "details": drifted_features,
+            "report_file": latest_report
+        }
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du statut de drift: {e}", extra={
+            'custom_dimensions': {'event_type': 'drift_error', 'error': str(e)}
+        })
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur: {str(e)}"
+        )
+
+
+@app.post("/drift/check", tags=["Monitoring"])
+def check_drift_now(threshold: float = 0.05):
+    """
+    Lance une vérification de drift immédiate
+    
+    Args:
+        threshold: Seuil de p-value (défaut: 0.05)
+    
+    Returns:
+        dict: Résultats de la détection de drift
+    """
+    try:
+        import subprocess
+        
+        # Vérifier que les fichiers existent
+        if not Path("data/bank_churn.csv").exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Fichier de référence manquant: data/bank_churn.csv"
+            )
+        
+        if not Path("data/production_data.csv").exists():
+            return {
+                "status": "no_production_data",
+                "message": "Aucune donnée de production disponible",
+                "instruction": "Générez d'abord des données: python generate_drift_data.py"
+            }
+        
+        # Exécuter la détection de drift
+        result = subprocess.run(
+            ["python", "drift_detection.py"],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            return {
+                "status": "success",
+                "message": "Détection de drift exécutée avec succès",
+                "output": result.stdout,
+                "instruction": "Consultez /drift/status pour les résultats"
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Erreur lors de l'exécution",
+                "error": result.stderr
+            }
+            
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=504,
+            detail="Timeout - La détection a pris trop de temps"
+        )
+    except Exception as e:
+        logger.error(f"Erreur lors de la vérification de drift: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur: {str(e)}"
+        )
+
+
+@app.get("/drift/visualizations", tags=["Monitoring"])
+def list_drift_visualizations():
+    """
+    Liste les visualisations de drift disponibles
+    
+    Returns:
+        dict: Liste des fichiers de visualisation
+    """
+    try:
+        viz_files = {
+            "distributions": glob.glob("drift_reports/drift_distributions.png"),
+            "heatmap": glob.glob("drift_reports/drift_heatmap.png")
+        }
+        
+        available = {k: bool(v) for k, v in viz_files.items()}
+        
+        return {
+            "status": "ok",
+            "visualizations": available,
+            "files": {k: v[0] if v else None for k, v in viz_files.items()},
+            "instruction": "Les fichiers sont dans le dossier drift_reports/"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur: {str(e)}"
+        )
+
+
+@app.post("/drift/alert", tags=["Monitoring"])
+def trigger_drift_alert(
+    message: str = "Manual drift alert triggered",
+    severity: str = "warning"
+):
+    """
+    Déclenche une alerte de drift manuelle vers Application Insights
+    
+    Args:
+        message: Message de l'alerte
+        severity: Niveau (info, warning, error)
+    
+    Returns:
+        dict: Confirmation de l'envoi
+    """
+    log_func = {
+        'info': logger.info,
+        'warning': logger.warning,
+        'error': logger.error
+    }.get(severity, logger.warning)
+    
+    log_func(
+        f"🚨 MANUAL DRIFT ALERT: {message}",
+        extra={
+            'custom_dimensions': {
+                'event_type': 'manual_drift_alert',
+                'alert_message': message,
+                'severity': severity,
+                'triggered_by': 'api_endpoint'
+            }
+        }
+    )
+    
+    return {
+        "status": "alert_sent",
+        "message": message,
+        "severity": severity,
+        "logged_to": "Application Insights"
+    }
+
 
 if __name__ == "__main__":
     import uvicorn

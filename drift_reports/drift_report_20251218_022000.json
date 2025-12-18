@@ -1,0 +1,89 @@
+{
+  "timestamp": "2025-12-18T02:20:00.854859",
+  "threshold": 0.05,
+  "features_analyzed": 10,
+  "features_drifted": 7,
+  "drift_percentage": 70.0,
+  "results": {
+    "CreditScore": {
+      "p_value": 2.887112438050816e-41,
+      "statistic": 0.0969,
+      "drift_detected": true,
+      "type": "continuous",
+      "ref_mean": 574.8849,
+      "prod_mean": 527.1511,
+      "ref_std": 159.00042693517068,
+      "prod_std": 155.49820718591516
+    },
+    "Age": {
+      "p_value": 3.064456516172909e-129,
+      "statistic": 0.1718,
+      "drift_detected": true,
+      "type": "continuous",
+      "ref_mean": 48.4483,
+      "prod_mean": 58.4483,
+      "ref_std": 17.9219654835813,
+      "prod_std": 17.9219654835813
+    },
+    "Tenure": {
+      "p_value": 1.0,
+      "statistic": 0.0,
+      "drift_detected": false,
+      "type": "continuous",
+      "ref_mean": 4.9534,
+      "prod_mean": 4.9534,
+      "ref_std": 3.142008221116895,
+      "prod_std": 3.142008221116895
+    },
+    "Balance": {
+      "p_value": 3.153851637903124e-240,
+      "statistic": 0.2339,
+      "drift_detected": true,
+      "type": "continuous",
+      "ref_mean": 100744.66495750613,
+      "prod_mean": 130968.06444475798,
+      "ref_std": 57654.43956757595,
+      "prod_std": 74950.77143784874
+    },
+    "EstimatedSalary": {
+      "p_value": 9.708832376744617e-31,
+      "statistic": 0.0835,
+      "drift_detected": true,
+      "type": "continuous",
+      "ref_mean": 85520.44399858611,
+      "prod_mean": 95520.44399858611,
+      "ref_std": 37434.62923535589,
+      "prod_std": 37434.62923535589
+    },
+    "NumOfProducts": {
+      "p_value": 1.0,
+      "chi2": 0.0,
+      "drift_detected": false,
+      "type": "categorical"
+    },
+    "HasCrCard": {
+      "p_value": 1.0,
+      "chi2": 0.0,
+      "drift_detected": false,
+      "type": "categorical"
+    },
+    "IsActiveMember": {
+      "p_value": 3.5321481384770854e-103,
+      "chi2": 465.21036802801825,
+      "drift_detected": true,
+      "type": "categorical"
+    },
+    "Geography_Germany": {
+      "p_value": 1.210173285682175e-49,
+      "chi2": 219.4202272105209,
+      "drift_detected": true,
+      "type": "categorical"
+    },
+    "Geography_Spain": {
+      "p_value": 1.4784587714084903e-50,
+      "chi2": 223.6061933717727,
+      "drift_detected": true,
+      "type": "categorical"
+    }
+  }
+}
