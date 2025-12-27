@@ -5,10 +5,7 @@ import joblib
 import numpy as np
 import logging
 import os
-import json
-import glob
 import traceback
-from pathlib import Path
 
 from opencensus.ext.azure.log_exporter import AzureLogHandler
 
@@ -40,7 +37,6 @@ else:
         }
     })
 
-
 # ============================================================
 # FASTAPI INIT
 # ============================================================
@@ -48,7 +44,9 @@ else:
 app = FastAPI(
     title="Bank Churn Prediction API",
     description="API de prédiction et monitoring du churn client",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/docs" ,    # Swagger UI
+    redoc_url="/redoc" 
 )
 
 app.add_middleware(
@@ -58,11 +56,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-
 MODEL_PATH = os.getenv("MODEL_PATH", "model/churn_model.pkl")
 model = None
-
 
 @app.on_event("startup")
 async def load_model():
@@ -85,7 +80,6 @@ async def load_model():
         })
         model = None
 
-
 # ============================================================
 # GENERAL ENDPOINTS
 # ============================================================
@@ -99,13 +93,11 @@ def root():
         "docs": "/docs"
     }
 
-
 @app.get("/health", response_model=HealthResponse)
 def health():
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     return {"status": "healthy", "model_loaded": True}
-
 
 # ============================================================
 # PREDICTION ENDPOINTS
@@ -118,7 +110,7 @@ def predict(features: CustomerFeatures):
         raise HTTPException(status_code=503, detail="Model unavailable")
 
     try:
-        input_data = np.array([[  
+        input_data = np.array([[
             features.CreditScore,
             features.Age,
             features.Tenure,
@@ -133,7 +125,6 @@ def predict(features: CustomerFeatures):
 
         proba = float(model.predict_proba(input_data)[0][1])
         prediction = int(proba > 0.5)
-
         risk = "Low" if proba < 0.3 else "Medium" if proba < 0.7 else "High"
 
         logger.info("prediction", extra={
@@ -160,9 +151,9 @@ def predict(features: CustomerFeatures):
             }
         })
         raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/predict/batch")
 def predict_batch(features_list: List[CustomerFeatures]):
-
     if model is None:
         raise HTTPException(status_code=503, detail="Model unavailable")
 
@@ -170,7 +161,7 @@ def predict_batch(features_list: List[CustomerFeatures]):
         predictions = []
 
         for features in features_list:
-            input_data = np.array([[  
+            input_data = np.array([[
                 features.CreditScore,
                 features.Age,
                 features.Tenure,
@@ -198,10 +189,7 @@ def predict_batch(features_list: List[CustomerFeatures]):
             }
         })
 
-        return {
-            "predictions": predictions,
-            "count": len(predictions)
-        }
+        return {"predictions": predictions, "count": len(predictions)}
 
     except Exception as e:
         logger.error("batch_prediction_error", extra={
@@ -213,28 +201,22 @@ def predict_batch(features_list: List[CustomerFeatures]):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================
-# DRIFT LOGGING TO APPLICATION INSIGHTS
+# DRIFT DETECTION ENDPOINTS
 # ============================================================
 
 def log_drift_to_insights(drift_results: dict):
-
     total = len(drift_results)
     drifted = sum(1 for r in drift_results.values() if r.get("drift_detected"))
     percentage = round((drifted / total) * 100, 2) if total else 0
-
     risk = "LOW" if percentage < 20 else "MEDIUM" if percentage < 50 else "HIGH"
 
-    logger.warning(
-        "drift_detection",
-        extra={
-            "custom_dimensions": {   # ✅ OBLIGATOIRE
-                "event_type": "drift_detection",
-                "drift_percentage": percentage,
-                "risk_level": risk
-            }
+    logger.warning("drift_detection", extra={
+        "custom_dimensions": {
+            "event_type": "drift_detection",
+            "drift_percentage": percentage,
+            "risk_level": risk
         }
-    )
-
+    })
 
     for feature, details in drift_results.items():
         if details.get("drift_detected"):
@@ -248,23 +230,15 @@ def log_drift_to_insights(drift_results: dict):
                 }
             })
 
-
-# ============================================================
-# DRIFT ENDPOINTS
-# ============================================================
-
 @app.post("/drift/check")
 def check_drift(threshold: float = 0.05):
-
     try:
         results = detect_drift(
             reference_file="data/bank_churn.csv",
             production_file="data/production_data.csv",
             threshold=threshold
         )
-
         log_drift_to_insights(results)
-
         return {
             "status": "success",
             "features_analyzed": len(results),
@@ -281,12 +255,8 @@ def check_drift(threshold: float = 0.05):
         })
         raise HTTPException(status_code=500, detail="Drift check failed")
 
-
 @app.post("/drift/alert")
-def manual_drift_alert(
-    message: str = "Manual drift alert triggered",
-    severity: str = "warning"
-):
+def manual_drift_alert(message: str = "Manual drift alert triggered", severity: str = "warning"):
     logger.warning("manual_drift_alert", extra={
         "custom_dimensions": {
             "event_type": "manual_drift_alert",
@@ -295,5 +265,4 @@ def manual_drift_alert(
             "triggered_by": "api_endpoint"
         }
     })
-
     return {"status": "alert_sent"}
