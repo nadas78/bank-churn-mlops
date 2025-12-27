@@ -9,7 +9,7 @@ on:
 
 env:
   AZURE_RESOURCE_GROUP: rg-mlops-bank-churn # le nom de la ressource group
-  ACR_NAME: mlopsnevermind  # le nom de l'ACR
+  ACR_NAME:acrmlops665859166 # le nom de l'ACR
   CONTAINER_APP_NAME: bank-churn # le nom de l'api
   IMAGE_NAME: bank-churn-api # le nom de l'image docker
 
