@@ -8,75 +8,64 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_RESOURCE_GROUP: rg-mlops-bank-churn # le nom de la ressource group
-  ACR_NAME:acrmlops665859166 # le nom de l'ACR
-  CONTAINER_APP_NAME: bank-churn # le nom de l'api
-  IMAGE_NAME: bank-churn-api # le nom de l'image docker
+  AZURE_RESOURCE_GROUP: rg-mlops-bank-churn # Nom du groupe de ressources
+  ACR_NAME: acrmlops665859166 # Nom de l'ACR
+  CONTAINER_APP_NAME: bank-churn # Nom de l'API
+  IMAGE_NAME: bank-churn-api # Nom de l'image Docker
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10' # pour une compatibilité avec les librairies ML
-      
+          python-version: '3.10'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-cov
-      
+
       - name: Run tests
         run: |
           pytest tests/ -v --cov=app --cov-report=term
-      
+
   build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
+
       - name: Login to ACR
         uses: azure/docker-login@v1
         with:
           login-server: ${{ env.ACR_NAME }}.azurecr.io
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
-      
+
       - name: Build and push Docker image
         run: |
-          echo "🔨 Construction de l'image Docker (avec nouveau modèle si model/ changé)..."
-  
-          # 1. UN SEUL BUILD avec le hash du commit
+          echo "🔨 Building Docker image..."
           docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-          
-          # 2. TAGUER la MÊME image comme 'latest' (instantané)
           docker tag ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
-          
-          echo "🚀 Envoi vers Azure Container Registry..."
-          
-          # 3. Pousser les DEUX tags
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
-          
-          echo "✅ Succès !"
-          echo "   - Image : ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          echo "   - Latest : même image taggée"
-      
+          echo "✅ Docker image pushed successfully!"
+
       - name: Deploy to Azure Container Apps
         uses: azure/CLI@v1
         with:
@@ -85,17 +74,14 @@ jobs:
               --name ${{ env.CONTAINER_APP_NAME }} \
               --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
               --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
-      
+
       - name: Verify deployment
         run: |
           APP_URL=$(az containerapp show \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --query properties.configuration.ingress.fqdn -o tsv)
-          
           echo "Application deployed at: https://$APP_URL"
-          
           sleep 30
           curl -f https://$APP_URL/health || exit 1
-          
           echo "Deployment successful!"
