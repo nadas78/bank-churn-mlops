@@ -16,7 +16,6 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -40,7 +39,6 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -68,24 +66,33 @@ jobs:
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
           echo "✅ Docker image pushed successfully!"
 
-      -- name: Deploy to Azure Container Apps
-  uses: azure/CLI@v1
-  with:
-    inlineScript: |
-      echo "🚀 Deploying to Azure Container App..."
-      az containerapp create \
-        --name ${{ env.CONTAINER_APP_NAME }} \
-        --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-        --environment /subscriptions/99a14c14-25c6-4d47-8c4d-d0600c80c204/resourceGroups/rg-MLopsyy/providers/Microsoft.App/managedEnvironments/env-mlops-new \
-        --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-        --cpu 0.5 --memory 1.0Gi \
-        --ingress external \
-        --target-port 80 \
-        || az containerapp update \
-             --name ${{ env.CONTAINER_APP_NAME }} \
-             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-             --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+      - name: Deploy to Azure Container Apps
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            echo "🚀 Deploying to Azure Container App..."
 
+            # Récupérer l'ID de l'environnement automatiquement
+            ENV_ID=$(az containerapp env show \
+              --name env-mlops-new \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --query id -o tsv)
+
+            echo "Environment ID: $ENV_ID"
+
+            # Créer ou mettre à jour le Container App
+            az containerapp create \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --environment $ENV_ID \
+              --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+              --cpu 0.5 --memory 1.0Gi \
+              --ingress external \
+              --target-port 80 \
+              || az containerapp update \
+                   --name ${{ env.CONTAINER_APP_NAME }} \
+                   --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+                   --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Verify deployment
         run: |
