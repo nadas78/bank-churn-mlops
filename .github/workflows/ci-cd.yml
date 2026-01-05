@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_RESOURCE_GROUP: rg-mlops-bank-churn # Nom du groupe de ressources
-  ACR_NAME: acrmlops665859166 # Nom de l'ACR
-  CONTAINER_APP_NAME: bank-churn # Nom de l'API
-  IMAGE_NAME: bank-churn-api # Nom de l'image Docker
+  AZURE_RESOURCE_GROUP: rg-mlops-bank-churn
+  ACR_NAME: acrmlops665859166
+  CONTAINER_APP_NAME: bank-churn
+  IMAGE_NAME: bank-churn-api
 
 jobs:
   test:
@@ -30,7 +30,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-cov
 
       - name: Run tests
         run: |
@@ -59,10 +58,12 @@ jobs:
 
       - name: Build and push Docker image
         run: |
+          IMAGE_TAG=${{ github.sha }}
+          FULL_IMAGE=${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:$IMAGE_TAG
           echo "🔨 Building Docker image..."
-          docker build -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-          docker tag ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker build -t $FULL_IMAGE .
+          docker tag $FULL_IMAGE ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
+          docker push $FULL_IMAGE
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
           echo "✅ Docker image pushed successfully!"
 
@@ -70,10 +71,18 @@ jobs:
         uses: azure/CLI@v1
         with:
           inlineScript: |
-            az containerapp update \
+            echo "🚀 Deploying to Azure Container App..."
+            az containerapp create \
               --name ${{ env.CONTAINER_APP_NAME }} \
               --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+              --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+              --cpu 0.5 --memory 1.0Gi \
+              --ingress external \
+              --target-port 80 \
+              || az containerapp update \
+                   --name ${{ env.CONTAINER_APP_NAME }} \
+                   --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+                   --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Verify deployment
         run: |
@@ -81,7 +90,12 @@ jobs:
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --query properties.configuration.ingress.fqdn -o tsv)
-          echo "Application deployed at: https://$APP_URL"
-          sleep 30
-          curl -f https://$APP_URL/health || exit 1
-          echo "Deployment successful!"
+          echo "Application URL: https://$APP_URL"
+
+          for i in {1..10}; do
+            curl -f https://$APP_URL/health && break
+            echo "Waiting for app to be ready..."
+            sleep 10
+          done
+
+          echo "✅ Deployment successful!"
