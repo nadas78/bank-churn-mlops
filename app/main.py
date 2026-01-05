@@ -126,6 +126,10 @@ def predict(features: CustomerFeatures):
     
     logger.info(f"Prediction - Hash: {features_hash[:8]}")
     return result
+@app.get("/")
+def read_root():
+    return {"message": "Bank Churn Prediction API"}
+
 
 @app.post("/drift/check", tags=["Monitoring"])
 def check_drift(threshold: float = 0.05):
