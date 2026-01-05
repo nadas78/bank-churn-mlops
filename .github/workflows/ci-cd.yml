@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_RESOURCE_GROUP: rg-mlops-bank-churn
+  AZURE_RESOURCE_GROUP: rg-MLopsyy           # ton vrai groupe de ressources
+  ENVIRONMENT_NAME: env-mlops-new            # ton environnement Container Apps
   ACR_NAME: acrmlops665859166
   CONTAINER_APP_NAME: bank-churn
   IMAGE_NAME: bank-churn-api
@@ -73,18 +74,24 @@ jobs:
         with:
           inlineScript: |
             echo "🚀 Deploying to Azure Container App..."
-            az containerapp create \
+            # Création si n'existe pas, sinon update
+            az containerapp show \
+              --name ${{ env.CONTAINER_APP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1 \
+            || az containerapp create \
+                 --name ${{ env.CONTAINER_APP_NAME }} \
+                 --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+                 --environment ${{ env.ENVIRONMENT_NAME }} \
+                 --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+                 --cpu 0.5 --memory 1.0Gi \
+                 --ingress external \
+                 --target-port 80
+
+            # Update si l'application existe
+            az containerapp update \
               --name ${{ env.CONTAINER_APP_NAME }} \
               --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-              --cpu 0.5 --memory 1.0Gi \
-              --ingress external \
-              --target-port 80 \
-              --environment env-mlops-new \
-              || az containerapp update \
-                   --name ${{ env.CONTAINER_APP_NAME }} \
-                   --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-                   --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+              --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Verify deployment
         run: |
