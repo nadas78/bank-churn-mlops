@@ -80,6 +80,7 @@ jobs:
               --cpu 0.5 --memory 1.0Gi \
               --ingress external \
               --target-port 80 \
+              --environment env-mlops-new \
               || az containerapp update \
                    --name ${{ env.CONTAINER_APP_NAME }} \
                    --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
