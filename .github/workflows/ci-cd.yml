@@ -36,75 +36,71 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd)
           python -m pytest tests/ -v --cov=app --cov-report=term
+build-and-deploy:
+  needs: test
+  runs-on: ubuntu-latest
+  if: github.ref == 'refs/heads/main'
 
-  build-and-deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Login to ACR
+      uses: azure/docker-login@v1
+      with:
+        login-server: acrmlops665859166.azurecr.io
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Login to ACR
-        uses: azure/docker-login@v1
-        with:
-          login-server: acrmlops665859166.azurecr.io
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+    - name: Build and push Docker image
+      run: |
+        IMAGE_TAG=${{ github.sha }}
+        FULL_IMAGE=acrmlops665859166.azurecr.io/bank-churn-api:$IMAGE_TAG
 
-      - name: Build and push Docker image
-        run: |
-          IMAGE_TAG=${{ github.sha }}
-          FULL_IMAGE=${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:$IMAGE_TAG
-          echo "🔨 Building Docker image..."
-          docker build -t $FULL_IMAGE .
-          docker tag $FULL_IMAGE ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
-          docker push $FULL_IMAGE
-          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
-          echo "✅ Docker image pushed successfully!"
+        echo "🔨 Building Docker image..."
+        docker build -t $FULL_IMAGE .
+        docker tag $FULL_IMAGE acrmlops665859166.azurecr.io/bank-churn-api:latest
 
-      - name: Deploy to Azure Container Apps
-        uses: azure/CLI@v1
-        with:
-          inlineScript: |
-            echo "🚀 Deploying to Azure Container App..."
-            # Création si n'existe pas, sinon update
-            az containerapp show \
-              --name ${{ env.CONTAINER_APP_NAME }} \
-              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} > /dev/null 2>&1 \
-            || az containerapp create \
-                 --name ${{ env.CONTAINER_APP_NAME }} \
-                 --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-                 --environment ${{ env.ENVIRONMENT_NAME }} \
-                 --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-                 --cpu 0.5 --memory 1.0Gi \
-                 --ingress external \
-                 --target-port 80
+        docker push $FULL_IMAGE
+        docker push acrmlops665859166.azurecr.io/bank-churn-api:latest
+        echo "✅ Docker image pushed successfully!"
 
-            # Update si l'application existe
-            az containerapp update \
-              --name ${{ env.CONTAINER_APP_NAME }} \
-              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+    - name: Deploy to Azure Container Apps
+      uses: azure/CLI@v1
+      with:
+        inlineScript: |
+          echo "🚀 Deploying to Azure Container App..."
 
-      - name: Verify deployment
-        run: |
-          APP_URL=$(az containerapp show \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --query properties.configuration.ingress.fqdn -o tsv)
-          echo "Application URL: https://$APP_URL"
+          az containerapp create \
+            --name bank-churn \
+            --resource-group rg-MLopsyy \
+            --environment env-mlops-new \
+            --image acrmlops665859166.azurecr.io/bank-churn-api:${{ github.sha }} \
+            --cpu 0.5 --memory 1.0Gi \
+            --ingress external \
+            --target-port 80 \
+            || az containerapp update \
+                 --name bank-churn \
+                 --resource-group rg-MLopsyy \
+                 --image acrmlops665859166.azurecr.io/bank-churn-api:${{ github.sha }}
 
-          for i in {1..10}; do
-            curl -f https://$APP_URL/health && break
-            echo "Waiting for app to be ready..."
-            sleep 10
-          done
+    - name: Verify deployment
+      run: |
+        APP_URL=$(az containerapp show \
+          --name bank-churn \
+          --resource-group rg-MLopsyy \
+          --query properties.configuration.ingress.fqdn -o tsv)
+        echo "Application URL: https://$APP_URL"
 
-          echo "✅ Deployment successful!"
+        for i in {1..10}; do
+          curl -f https://$APP_URL/health && break
+          echo "Waiting for app to be ready..."
+          sleep 10
+        done
+
+        echo "✅ Deployment successful!"
