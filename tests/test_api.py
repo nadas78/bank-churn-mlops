@@ -33,3 +33,8 @@ def test_predict_with_mock():
         response = client.post("/predict", json=TEST_CUSTOMER)
         # Le test passe si l'API traite la requête
         assert response.status_code in [200, 422, 503]
+
+def test_docs_endpoint():
+    """Test que la documentation Swagger est accessible"""
+    response = client.get("/docs")
+    assert response.status_code == 200
